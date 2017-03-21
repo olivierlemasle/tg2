@@ -258,13 +258,14 @@ class BaseIntegrationTests(TestCase):
         # Removing the session dir:
         rmtree(session_dir, ignore_errors=True)
 
-    def _check_flash(self, response, *expected_messages):
+    def _check_flash(self, app, *expected_messages):
         """
         Check that ``expected_messages`` are defined in the WebFlash cookie.
 
         """
-        assert 'webflash' in response.cookies_set, "Such no WebFlash cookie"
-        flash = url_unquote(response.cookies_set['webflash'])
+        webflashCookies = filter(lambda cookie: cookie.name == 'webflash', app.cookiejar)
+        assert len(webflashCookies) > 0, "Such no WebFlash cookie"
+        flash = url_unquote(webflashCookies[0].value)
         for msg in expected_messages:
             msg = '"%s"' % msg
             assert msg in flash, 'Message %s not in flash: %s' % (msg, flash)
@@ -340,12 +341,12 @@ class TestRequire(BaseIntegrationTests):
         # As an anonymous user:
         resp = self.app.get('/commit', status=401)
         assert "you can commit" not in resp.body.decode('utf-8')
-        self._check_flash(resp, r'The current user must be \"developer\"')
+        self._check_flash(self.app, r'The current user must be \"developer\"')
         # As an authenticated user:
         environ = {'REMOTE_USER': 'foobar'}
         resp = self.app.get('/commit', extra_environ=environ, status=403)
         assert "you can commit" not in resp.body.decode('utf-8')
-        self._check_flash(resp, r'The current user must be \"developer\"')
+        self._check_flash(self.app, r'The current user must be \"developer\"')
 
     def test_authz_granted_in_sub_controller(self):
         environ = {'REMOTE_USER': 'admin'}
@@ -357,13 +358,13 @@ class TestRequire(BaseIntegrationTests):
         # As an anonymous user:
         resp = self.app.get('/cp/add_user/foo', status=401)
         assert "was just registered" not in resp.body.decode('utf-8')
-        self._check_flash(resp, NOT_AUTHENTICATED)
+        self._check_flash(self.app, NOT_AUTHENTICATED)
         # As an authenticated user:
         environ = {'REMOTE_USER': 'foobar'}
         resp = self.app.get('/cp/add_user/foo', extra_environ=environ,
                             status=403)
         assert "was just registered" not in resp.body.decode('utf-8')
-        self._check_flash(resp, r'The current user must be \"admin\"')
+        self._check_flash(self.app, r'The current user must be \"admin\"')
 
     def test_smart_auth_json(self):
         nouser = {'accept': 'application/json'}
@@ -422,7 +423,7 @@ class TestAllowOnlyDecoratorInSubController(BaseIntegrationTests):
     def test_authz_denied_without_require(self):
         resp = self.app.get('/cp/', status=401)
         assert "you are in the panel" not in resp.body.decode('utf-8')
-        self._check_flash(resp, NOT_AUTHENTICATED)
+        self._check_flash(self.app, NOT_AUTHENTICATED)
 
     def test_authz_granted_with_require(self):
         environ = {'REMOTE_USER': 'admin'}
@@ -433,7 +434,7 @@ class TestAllowOnlyDecoratorInSubController(BaseIntegrationTests):
     def test_authz_denied_with_require(self):
         resp = self.app.get('/cp/add_user/foo', status=401)
         assert "was just registered" not in resp.body.decode('utf-8')
-        self._check_flash(resp, NOT_AUTHENTICATED)
+        self._check_flash(self.app, NOT_AUTHENTICATED)
 
 class TestAllowOnlyAttributeInSubController(BaseIntegrationTests):
     """Test case for the .allow_only attribute in a sub-controller"""
@@ -449,12 +450,12 @@ class TestAllowOnlyAttributeInSubController(BaseIntegrationTests):
         # As an anonymous user:
         resp = self.app.get('/hr/', status=401)
         assert "you can manage Human Resources" not in resp.body.decode('utf-8')
-        self._check_flash(resp, r'The current user must have been authenticated')
+        self._check_flash(self.app, r'The current user must have been authenticated')
         # As an authenticated user:
         environ = {'REMOTE_USER': 'someone'}
         resp = self.app.get('/hr/', extra_environ = environ, status=403)
         assert "you can manage Human Resources" not in resp.body.decode('utf-8')
-        self._check_flash(resp, r'The current user must be \"hiring-manager\"')
+        self._check_flash(self.app, r'The current user must be \"hiring-manager\"')
 
     def test_authz_granted_with_require(self):
         environ = {'REMOTE_USER': 'hiring-manager'}
@@ -466,12 +467,12 @@ class TestAllowOnlyAttributeInSubController(BaseIntegrationTests):
         # As an anonymous user:
         resp = self.app.get('/hr/hire/gustavo', status=401)
         assert "was just hired" not in resp.body.decode('utf-8')
-        self._check_flash(resp, r'The current user must have been authenticated')
+        self._check_flash(self.app, r'The current user must have been authenticated')
         # As an authenticated user:
         environ = {'REMOTE_USER': 'someone'}
         resp = self.app.get('/hr/hire/gustavo', extra_environ = environ, status=403)
         assert "was just hired" not in resp.body.decode('utf-8')
-        self._check_flash(resp, r'The current user must be \"hiring-manager\"')
+        self._check_flash(self.app, r'The current user must be \"hiring-manager\"')
 
 class TestAllowOnlyAttributeAndDefaultAuthzDenialHandler(BaseIntegrationTests):
     """
@@ -504,7 +505,7 @@ class TestAppWideAuthzWithAllowOnlyDecorator(BaseIntegrationTests):
     def test_authz_denied_without_require(self):
         resp = self.app.get('/', status=401)
         assert "you are in the panel" not in resp.body.decode('utf-8')
-        self._check_flash(resp, NOT_AUTHENTICATED)
+        self._check_flash(self.app, NOT_AUTHENTICATED)
 
     def test_authz_granted_with_require(self):
         environ = {'REMOTE_USER': 'admin'}
@@ -515,7 +516,7 @@ class TestAppWideAuthzWithAllowOnlyDecorator(BaseIntegrationTests):
     def test_authz_denied_with_require(self):
         resp = self.app.get('/add_user/foo', status=401)
         assert "was just registered" not in resp.body.decode('utf-8')
-        self._check_flash(resp, NOT_AUTHENTICATED)
+        self._check_flash(self.app, NOT_AUTHENTICATED)
 
 
 class TestAppWideAuthzWithAllowOnlyAttribute(BaseIntegrationTests):
@@ -532,12 +533,12 @@ class TestAppWideAuthzWithAllowOnlyAttribute(BaseIntegrationTests):
         # As an anonymous user:
         resp = self.app.get('/', status=401)
         assert "you can manage Human Resources" not in resp.body.decode('utf-8')
-        self._check_flash(resp, r'The current user must be \"hiring-manager\"')
+        self._check_flash(self.app, r'The current user must be \"hiring-manager\"')
         # As an authenticated user:
         environ = {'REMOTE_USER': 'someone'}
         resp = self.app.get('/', extra_environ = environ, status=403)
         assert "you can manage Human Resources" not in resp.body.decode('utf-8')
-        self._check_flash(resp, r'The current user must be \"hiring-manager\"')
+        self._check_flash(self.app, r'The current user must be \"hiring-manager\"')
 
     def test_authz_granted_with_require(self):
         environ = {'REMOTE_USER': 'hiring-manager'}
@@ -549,12 +550,12 @@ class TestAppWideAuthzWithAllowOnlyAttribute(BaseIntegrationTests):
         # As an anonymous user:
         resp = self.app.get('/hire/gustavo', status=401)
         assert "was just hired" not in resp.body.decode('utf-8')
-        self._check_flash(resp, r'The current user must be \"hiring-manager\"')
+        self._check_flash(self.app, r'The current user must be \"hiring-manager\"')
         # As an authenticated user:
         environ = {'REMOTE_USER': 'someone'}
         resp = self.app.get('/hire/gustavo', extra_environ = environ, status=403)
         assert "was just hired" not in resp.body.decode('utf-8')
-        self._check_flash(resp, r'The current user must be \"hiring-manager\"')
+        self._check_flash(self.app, r'The current user must be \"hiring-manager\"')
 
 
 class TestProtectedRESTContoller(BaseIntegrationTests):
@@ -570,12 +571,12 @@ class TestProtectedRESTContoller(BaseIntegrationTests):
         # As an anonymous user:
         resp = self.app.get('/rest/new', status=401)
         assert "new here" not in resp.body.decode('utf-8')
-        self._check_flash(resp, r'The current user must be \"gustavo\"')
+        self._check_flash(self.app, r'The current user must be \"gustavo\"')
         # As an authenticated user:
         environ = {'REMOTE_USER': 'non-gustavo'}
         resp = self.app.get('/rest/new', extra_environ=environ, status=403)
         assert "new here" not in resp.body.decode('utf-8')
-        self._check_flash(resp, r'The current user must be \"gustavo\"')
+        self._check_flash(self.app, r'The current user must be \"gustavo\"')
 
 
 class TestProtectedWSGIApplication(BaseIntegrationTests):
@@ -594,13 +595,13 @@ class TestProtectedWSGIApplication(BaseIntegrationTests):
         # As an anonymous user:
         resp = self.app.get('/mounted_app/da-path', status=401)
         assert "Hello from /mounted_app/" not in resp.body.decode('utf-8')
-        self._check_flash(resp, r'The current user must be \"gustavo\"')
+        self._check_flash(self.app, r'The current user must be \"gustavo\"')
         # As an authenticated user:
         environ = {'REMOTE_USER': 'non-gustavo'}
         resp = self.app.get('/mounted_app/da-path', extra_environ=environ,
                             status=403)
         assert "Hello from /mounted_app/" not in resp.body.decode('utf-8')
-        self._check_flash(resp, r'The current user must be \"gustavo\"')
+        self._check_flash(self.app, r'The current user must be \"gustavo\"')
 
 class ErrorController(object):
     @expose()
